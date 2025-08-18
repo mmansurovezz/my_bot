@@ -5,17 +5,15 @@ from datetime import datetime
 import os
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from aiogram.dispatcher.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 # ==============================
 # 1. Token va adminlar
 # ==============================
-TOKEN = os.getenv("BOT_TOKEN") or "8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w"
+TOKEN = os.getenv("8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w") or "8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w"
 ADMINS = [5708983199]
 
 bot = Bot(token=TOKEN, parse_mode="HTML")
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 # ==============================
 # 2. Bazani yaratish va ulash
@@ -82,16 +80,16 @@ async def check_subscription(user_id):
 # 5. Obuna uchun klaviatura
 # ==============================
 def sub_keyboard(channels):
-    kb = InlineKeyboardBuilder()
+    kb = InlineKeyboardMarkup()
     for ch in channels:
-        kb.row(InlineKeyboardButton(text="✅ Kanalga obuna bo‘lish", url=f"https://t.me/{ch.replace('@','')}"))
-    kb.row(InlineKeyboardButton(text="Tekshirish ✅", callback_data="check_subs"))
-    return kb.as_markup()
+        kb.add(InlineKeyboardButton(text="✅ Kanalga obuna bo‘lish", url=f"https://t.me/{ch.replace('@','')}"))
+    kb.add(InlineKeyboardButton(text="Tekshirish ✅", callback_data="check_subs"))
+    return kb
 
 # ==============================
 # 6. /start buyrug'i
 # ==============================
-@dp.message_handler(Command("start"))
+@dp.message(lambda m: m.text and m.text.startswith("/start"))
 async def start_cmd(message: Message):
     ref_id = None
     if len(message.text.split()) > 1:
@@ -121,7 +119,7 @@ async def start_cmd(message: Message):
 # ==============================
 # 7. Obuna tekshirish tugmasi
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "check_subs")
+@dp.callback_query(lambda c: c.data == "check_subs")
 async def check_subs(call: CallbackQuery):
     not_subs = await check_subscription(call.from_user.id)
     if not_subs:
@@ -135,7 +133,7 @@ async def check_subs(call: CallbackQuery):
 # ==============================
 # 8. Referal
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "referal")
+@dp.callback_query(lambda c: c.data == "referal")
 async def referal(call: CallbackQuery):
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (call.from_user.id,))
     balance = cursor.fetchone()[0]
@@ -145,7 +143,7 @@ async def referal(call: CallbackQuery):
 # ==============================
 # 9. Reyting
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "reyting")
+@dp.callback_query(lambda c: c.data == "reyting")
 async def reyting(call: CallbackQuery):
     cursor.execute("SELECT user_id FROM admins")
     admin_ids = set([row[0] for row in cursor.fetchall()])
@@ -171,7 +169,7 @@ async def reyting(call: CallbackQuery):
 # ==============================
 # 10. Random foydalanuvchi
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "random")
+@dp.callback_query(lambda c: c.data == "random")
 async def random_user(call: CallbackQuery):
     cursor.execute("SELECT user_id FROM users")
     users = cursor.fetchall()
@@ -184,10 +182,10 @@ async def random_user(call: CallbackQuery):
 # ==============================
 # 11. Adminga murojaat
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "murojaat")
+@dp.callback_query(lambda c: c.data == "murojaat")
 async def murojaat(call: CallbackQuery):
     await call.message.answer("✍️ Adminga murojaat qilmoqchi bo‘lsangiz, xabaringizni yozing:")
-    dp.register_message_handler(forward_to_admin, lambda m: m.chat.id == call.from_user.id)
+    dp.message.register(forward_to_admin, lambda m: m.chat.id == call.from_user.id)
 
 async def forward_to_admin(message: Message):
     for admin in ADMINS:
@@ -197,7 +195,7 @@ async def forward_to_admin(message: Message):
 # ==============================
 # 12. Admin panel va funksiyalar
 # ==============================
-@dp.message_handler(Command("admin"))
+@dp.message(lambda m: m.text and m.text.startswith("/admin"))
 async def admin_panel(message: Message):
     if message.from_user.id not in ADMINS:
         return
@@ -214,10 +212,10 @@ async def admin_panel(message: Message):
 # ==============================
 # 13. Broadcast
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "broadcast")
+@dp.callback_query(lambda c: c.data == "broadcast")
 async def broadcast_start(call: CallbackQuery):
     await call.message.answer("📨 Hammaga yuboriladigan xabarni yozing:")
-    dp.register_message_handler(broadcast_message)
+    dp.message.register(broadcast_message)
 
 async def broadcast_message(message: Message):
     cursor.execute("SELECT user_id FROM users")
@@ -234,20 +232,20 @@ async def broadcast_message(message: Message):
 # ==============================
 # 14. Kanal qo‘shish/o‘chirish
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "add_channel")
+@dp.callback_query(lambda c: c.data == "add_channel")
 async def add_channel_start(call: CallbackQuery):
     await call.message.answer("📌 Qo‘shmoqchi bo‘lgan kanal username (@kanal) ni yuboring:")
-    dp.register_message_handler(add_channel_db)
+    dp.message.register(add_channel_db)
 
 async def add_channel_db(message: Message):
     cursor.execute("INSERT INTO channels(channel_id) VALUES (?)", (message.text,))
     conn.commit()
     await message.answer("✅ Kanal qo‘shildi.")
 
-@dp.callback_query_handler(lambda c: c.data == "del_channel")
+@dp.callback_query(lambda c: c.data == "del_channel")
 async def del_channel_start(call: CallbackQuery):
     await call.message.answer("❌ O‘chirish uchun kanal username (@kanal) ni yuboring:")
-    dp.register_message_handler(del_channel_db)
+    dp.message.register(del_channel_db)
 
 async def del_channel_db(message: Message):
     cursor.execute("DELETE FROM channels WHERE channel_id=?", (message.text,))
@@ -257,7 +255,7 @@ async def del_channel_db(message: Message):
 # ==============================
 # 15. Foydalanuvchilar soni
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "users_count")
+@dp.callback_query(lambda c: c.data == "users_count")
 async def users_count(call: CallbackQuery):
     cursor.execute("SELECT COUNT(*) FROM users")
     count = cursor.fetchone()[0]
@@ -266,11 +264,11 @@ async def users_count(call: CallbackQuery):
 # ==============================
 # 16. Admin boshqaruvi
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "manage_admins")
+@dp.callback_query(lambda c: c.data == "manage_admins")
 async def manage_admins(call: CallbackQuery):
     await call.message.answer("➕Admin qo‘shish uchun: `/addadmin user_id`\n➖Admin o‘chirish uchun: `/deladmin user_id`")
 
-@dp.message_handler(Command("addadmin"))
+@dp.message(lambda m: m.text and m.text.startswith("/addadmin"))
 async def add_admin(message: Message):
     if message.from_user.id not in ADMINS:
         return
@@ -282,7 +280,7 @@ async def add_admin(message: Message):
     except:
         await message.answer("❌ Noto‘g‘ri format. Misol: /addadmin 123456789")
 
-@dp.message_handler(Command("deladmin"))
+@dp.message(lambda m: m.text and m.text.startswith("/deladmin"))
 async def del_admin(message: Message):
     if message.from_user.id not in ADMINS:
         return
@@ -297,7 +295,7 @@ async def del_admin(message: Message):
 # ==============================
 # 17. Chiqqanlar ro‘yxati
 # ==============================
-@dp.callback_query_handler(lambda c: c.data == "left_users")
+@dp.callback_query(lambda c: c.data == "left_users")
 async def show_left_users(call: CallbackQuery):
     cursor.execute("SELECT user_id, channel_id, left_time FROM unsubscribed ORDER BY left_time DESC LIMIT 10")
     rows = cursor.fetchall()
@@ -316,7 +314,7 @@ async def show_left_users(call: CallbackQuery):
 # ==============================
 async def main():
     print("🤖 Bot ishga tushdi...")
-    await dp.start_polling()
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())

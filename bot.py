@@ -1,184 +1,192 @@
-import logging
-import sqlite3
-import random
-import json
-import asyncio
 from aiogram import Bot, Dispatcher, executor, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from config import BOT_TOKEN, ADMINS, CHANNELS, REFERAL_BALL, USERS
+import random
 
-# === CONFIG ===
-BOT_TOKEN = "8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w"
-BOT_USERNAME = "mansurovkonkursbot"
-DEFAULT_CHANNEL = "@allgamessavdo"
-ADMIN_IDS = [5708983199]
-CHANNEL_FILE = "channels.json"
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot, storage=MemoryStorage())
 
-# === DATABASE ===
-conn = sqlite3.connect("users.db")
-cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    invited_by INTEGER,
-    joined_channel BOOLEAN DEFAULT 0
+# Menyular
+user_menu = ReplyKeyboardMarkup(resize_keyboard=True)
+user_menu.add(
+    KeyboardButton("🏆 Reyting"),
+    KeyboardButton("✅ Referal"),
+    KeyboardButton("📩 Admin bilan bog‘lanish")
 )
-""")
-conn.commit()
 
-# === BOT SETUP ===
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
-dp = Dispatcher(bot)
+admin_panel = InlineKeyboardMarkup(row_width=2)
+admin_panel.add(
+    InlineKeyboardButton("📊 Statistikalar", callback_data="stats"),
+    InlineKeyboardButton("🎲 Random tanlash", callback_data="random"),
+    InlineKeyboardButton("📢 Hammaga xabar", callback_data="broadcast"),
+    InlineKeyboardButton("➕ Admin qo‘shish", callback_data="add_admin"),
+    InlineKeyboardButton("➖ Admin chiqarish", callback_data="remove_admin"),
+    InlineKeyboardButton("➕ Kanal qo‘shish", callback_data="add_channel"),
+    InlineKeyboardButton("➖ Kanal chiqarish", callback_data="remove_channel")
+)
 
-# === UTILS ===
-def load_channels():
-    try:
-        with open(CHANNEL_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return [DEFAULT_CHANNEL]
+pending_admin_action = {}
+pending_channel_action = {}
+pending_broadcast = {}
 
-def save_channels(channels):
-    with open(CHANNEL_FILE, "w") as f:
-        json.dump(channels, f)
-
-async def check_subscription(user_id):
-    channels = load_channels()
-    for channel in channels:
-        try:
-            member = await bot.get_chat_member(channel, user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                return False
-        except:
-            return False
-    return True
-
-# === MONITOR UNSUBSCRIBED USERS ===
-async def monitor_unsubscribed():
-    while True:
-        cursor.execute("SELECT user_id FROM users WHERE joined_channel=1")
-        users = cursor.fetchall()
-        for user in users:
-            user_id = user[0]
-            if not await check_subscription(user_id):
-                cursor.execute("UPDATE users SET joined_channel=0 WHERE user_id=?", (user_id,))
-                conn.commit()
-                for admin_id in ADMIN_IDS:
-                    try:
-                        await bot.send_message(admin_id, f"⚠️ <a href='tg://user?id={user_id}'>Foydalanuvchi</a> kanalni tark etdi.")
-                    except:
-                        continue
-        await asyncio.sleep(600)  # 10 daqiqada bir marta tekshiradi
-
-# === HANDLERS ===
+# /start
 @dp.message_handler(commands=["start"])
 async def start_handler(message: types.Message):
     user_id = message.from_user.id
-    args = message.get_args()
-    invited_by = int(args) if args.isdigit() else None
-
-    cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    if not cursor.fetchone():
-        cursor.execute("INSERT INTO users (user_id, invited_by) VALUES (?, ?)", (user_id, invited_by))
-        conn.commit()
-
-    if not await check_subscription(user_id):
-        await message.answer("Botdan foydalanish uchun quyidagi kanal(lar)ga obuna bo‘ling:\n" +
-                             "\n".join(load_channels()))
-        return
-
-    cursor.execute("UPDATE users SET joined_channel=1 WHERE user_id=?", (user_id,))
-    conn.commit()
-
-    await message.answer("🎉 Xush kelibsiz! Siz konkursda ishtirok etyapsiz.")
-
-@dp.message_handler(commands=["referal"])
-async def referral_handler(message: types.Message):
-    user_id = message.from_user.id
-    link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
-    cursor.execute("SELECT COUNT(*) FROM users WHERE invited_by=?", (user_id,))
-    count = cursor.fetchone()[0]
-    await message.answer(f"🔗 Sizning referal havolangiz:\n{link}\n👥 Taklif qilganlar soni: {count}")
-
-@dp.message_handler(commands=["rating"])
-async def rating_handler(message: types.Message):
-    cursor.execute("""
-        SELECT invited_by, COUNT(*) as total FROM users 
-        WHERE invited_by IS NOT NULL GROUP BY invited_by ORDER BY total DESC LIMIT 10
-    """)
-    rows = cursor.fetchall()
-    text = "🏆 Top 10 Referal Reyting:\n"
-    for i, row in enumerate(rows, 1):
-        text += f"{i}. <a href='tg://user?id={row[0]}'>User</a> — {row[1]} ta taklif\n"
-    await message.answer(text)
-
-@dp.message_handler(commands=["winner"])
-async def winner_handler(message: types.Message):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    cursor.execute("SELECT user_id FROM users WHERE joined_channel=1")
-    users = cursor.fetchall()
-    if not users:
-        await message.answer("Faol ishtirokchilar topilmadi.")
-        return
-    winner = random.choice(users)[0]
-    await message.answer(f"🎉 Random g‘olib: <a href='tg://user?id={winner}'>User</a>")
-
-@dp.message_handler(commands=["broadcast"])
-async def broadcast_handler(message: types.Message):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    text = message.text.replace("/broadcast ", "")
-    cursor.execute("SELECT user_id FROM users")
-    users = cursor.fetchall()
-    count = 0
-    for user in users:
+    ref_id = None
+    if message.get_args():
         try:
-            await bot.send_message(user[0], text)
-            count += 1
+            ref_id = int(message.get_args())
+        except:
+            pass
+
+    if user_id not in USERS:
+        USERS[user_id] = {"ref": ref_id, "score": 0, "joined": False}
+        if ref_id and ref_id in USERS:
+            USERS[ref_id]["score"] += REFERAL_BALL
+
+    await message.answer("🎉 Xush kelibsiz! Siz konkursda ishtirok etyapsiz.", reply_markup=user_menu)
+
+# Reyting
+@dp.message_handler(lambda msg: msg.text == "🏆 Reyting")
+async def show_rating(msg: types.Message):
+    sorted_users = sorted(USERS.items(), key=lambda x: x[1]["score"], reverse=True)
+    text = "🏆 Reyting:\n"
+    for i, (uid, data) in enumerate(sorted_users[:10], 1):
+        text += f"{i}. {uid} — {data['score']} ball\n"
+    await msg.answer(text)
+
+# Referal
+@dp.message_handler(lambda msg: msg.text == "✅ Referal")
+async def referal_link(msg: types.Message):
+    link = f"https://t.me/{(await bot.get_me()).username}?start={msg.from_user.id}"
+    await msg.answer(f"🔗 Sizning referal linkingiz:\n{link}")
+
+# Admin bilan bog‘lanish
+@dp.message_handler(lambda msg: msg.text == "📩 Admin bilan bog‘lanish")
+async def contact_admin(msg: types.Message):
+    await msg.answer("✍️ Savolingizni yozing:")
+    pending_admin_action[msg.from_user.id] = "contact"
+
+@dp.message_handler(lambda msg: msg.from_user.id in pending_admin_action and pending_admin_action[msg.from_user.id] == "contact")
+async def handle_contact(msg: types.Message):
+    for admin_id in ADMINS:
+        await bot.send_message(admin_id, f"📩 Yangi xabar:\n{msg.text}\n👤 From: {msg.from_user.full_name}")
+    await msg.answer("✅ Xabaringiz adminga yuborildi.")
+    pending_admin_action.pop(msg.from_user.id)
+
+# /admin
+@dp.message_handler(commands=["admin"])
+async def admin_handler(msg: types.Message):
+    if msg.from_user.id in ADMINS:
+        await msg.answer("🛠 Admin Panel:", reply_markup=admin_panel)
+    else:
+        await msg.answer("⛔ Siz admin emassiz.")
+
+# Kanal monitoringi
+@dp.chat_member_handler()
+async def channel_monitor(event: ChatMemberUpdated):
+    user = event.from_user
+    chat = event.chat
+    status = event.new_chat_member.status
+    if chat.id in CHANNELS:
+        if status == "member":
+            USERS[user.id]["joined"] = True
+        elif status == "left":
+            USERS[user.id]["joined"] = False
+
+# Callbacklar
+@dp.callback_query_handler(lambda c: c.data == "stats")
+async def stats_handler(c: types.CallbackQuery):
+    total = len(USERS)
+    joined = sum(1 for u in USERS.values() if u["joined"])
+    left = total - joined
+    await c.message.answer(f"📊 Statistikalar:\nUmumiy: {total}\nObuna: {joined}\nChiqib ketgan: {left}")
+
+@dp.callback_query_handler(lambda c: c.data == "random")
+async def random_handler(c: types.CallbackQuery):
+    if USERS:
+        winner = random.choice(list(USERS.keys()))
+        await c.message.answer(f"🎉 G‘olib: {winner}")
+    else:
+        await c.message.answer("❌ Ishtirokchilar yo‘q.")
+
+@dp.callback_query_handler(lambda c: c.data == "broadcast")
+async def broadcast_prompt(c: types.CallbackQuery):
+    pending_broadcast[c.from_user.id] = True
+    await c.message.answer("✍️ Hammaga yuboriladigan xabarni yozing:")
+
+@dp.message_handler(lambda msg: msg.from_user.id in pending_broadcast)
+async def handle_broadcast(msg: types.Message):
+    for uid in USERS:
+        try:
+            await bot.send_message(uid, msg.text)
         except:
             continue
-    await message.answer(f"📢 Xabar {count} foydalanuvchiga yuborildi.")
+    await msg.answer("✅ Xabar yuborildi.")
+    pending_broadcast.pop(msg.from_user.id)
 
-@dp.message_handler(commands=["admin"])
-async def admin_panel(message: types.Message):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM users WHERE joined_channel=1")
-    joined = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM users WHERE joined_channel=0")
-    left = cursor.fetchone()[0]
-    await message.answer(f"🛠 Admin Panel:\n👥 Umumiy: {total}\n✅ Obuna bo‘lganlar: {joined}\n🚪 Chiqib ketganlar: {left}")
+@dp.callback_query_handler(lambda c: c.data == "add_admin")
+async def add_admin_prompt(c: types.CallbackQuery):
+    pending_admin_action[c.from_user.id] = "add"
+    await c.message.answer("🆕 Admin qo‘shish uchun user_id yuboring:")
 
-@dp.message_handler(commands=["addchannel"])
-async def add_channel(message: types.Message):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    channel = message.get_args()
-    channels = load_channels()
-    if channel not in channels:
-        channels.append(channel)
-        save_channels(channels)
-        await message.answer(f"✅ Kanal qo‘shildi: {channel}")
-    else:
-        await message.answer("⚠️ Bu kanal allaqachon ro‘yxatda.")
+@dp.callback_query_handler(lambda c: c.data == "remove_admin")
+async def remove_admin_prompt(c: types.CallbackQuery):
+    pending_admin_action[c.from_user.id] = "remove"
+    await c.message.answer("🗑 Admin o‘chirish uchun user_id yuboring:")
 
-@dp.message_handler(commands=["removechannel"])
-async def remove_channel(message: types.Message):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    channel = message.get_args()
-    channels = load_channels()
-    if channel in channels:
-        channels.remove(channel)
-        save_channels(channels)
-        await message.answer(f"❌ Kanal o‘chirildi: {channel}")
-    else:
-        await message.answer("⚠️ Bu kanal ro‘yxatda yo‘q.")
+@dp.message_handler(lambda msg: msg.from_user.id in pending_admin_action and pending_admin_action[msg.from_user.id] in ["add", "remove"])
+async def handle_admin_change(msg: types.Message):
+    action = pending_admin_action.pop(msg.from_user.id)
+    try:
+        uid = int(msg.text.strip())
+        if action == "add":
+            if uid not in ADMINS:
+                ADMINS.append(uid)
+                await msg.answer(f"✅ Admin qo‘shildi: {uid}")
+            else:
+                await msg.answer("⚠️ Bu user allaqachon admin.")
+        else:
+            if uid in ADMINS:
+                ADMINS.remove(uid)
+                await msg.answer(f"❌ Admin o‘chirildi: {uid}")
+            else:
+                await msg.answer("⚠️ Bu user admin emas.")
+    except:
+        await msg.answer("❌ Noto‘g‘ri ID.")
 
-# === RUN ===
+@dp.callback_query_handler(lambda c: c.data == "add_channel")
+async def add_channel_prompt(c: types.CallbackQuery):
+    pending_channel_action[c.from_user.id] = "add"
+    await c.message.answer("📥 Kanal ID ni yuboring:")
+
+@dp.callback_query_handler(lambda c: c.data == "remove_channel")
+async def remove_channel_prompt(c: types.CallbackQuery):
+    pending_channel_action[c.from_user.id] = "remove"
+    await c.message.answer("🗑 Kanal ID ni yuboring:")
+
+@dp.message_handler(lambda msg: msg.from_user.id in pending_channel_action)
+async def handle_channel_change(msg: types.Message):
+    action = pending_channel_action.pop(msg.from_user.id)
+    try:
+        cid = int(msg.text.strip())
+        if action == "add":
+            if cid not in CHANNELS:
+                CHANNELS.append(cid)
+                await msg.answer(f"✅ Kanal qo‘shildi: {cid}")
+            else:
+                await msg.answer("⚠️ Kanal allaqachon ro‘yxatda.")
+        else:
+            if cid in CHANNELS:
+                CHANNELS.remove(cid)
+                await msg.answer(f"❌ Kanal o‘chirildi: {cid}")
+            else:
+                await msg.answer("⚠️ Kanal ro‘yxatda yo‘q.")
+    except:
+        await msg.answer("❌ Noto‘g‘ri ID.")
+
+# Botni ishga tushirish
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(monitor_unsubscribed())
-    executor.start_polling(dp, loop=loop)
+    executor.start_polling(dp, skip_updates=True)

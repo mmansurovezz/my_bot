@@ -5,8 +5,7 @@ from datetime import datetime
 import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.dispatcher.filters import Command
 
 # ==============================
 # 1. Token va adminlar
@@ -15,7 +14,7 @@ TOKEN = os.getenv("BOT_TOKEN") or "8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1
 ADMINS = [5708983199]
 
 bot = Bot(token=TOKEN, parse_mode="HTML")
-dp = Dispatcher()
+dp = Dispatcher(bot)
 
 # ==============================
 # 2. Bazani yaratish va ulash
@@ -91,7 +90,7 @@ def sub_keyboard(channels):
 # ==============================
 # 6. /start buyrug'i
 # ==============================
-@dp.message(Command("start"))
+@dp.message_handler(commands=["start"])
 async def start_cmd(message: Message):
     ref_id = None
     if len(message.text.split()) > 1:
@@ -110,18 +109,19 @@ async def start_cmd(message: Message):
         )
         return
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👥 Referal", callback_data="referal")],
-        [InlineKeyboardButton(text="🏆 Reyting", callback_data="reyting")],
-        [InlineKeyboardButton(text="🎲 Random foydalanuvchi", callback_data="random")],
-        [InlineKeyboardButton(text="✉️ Adminga murojaat", callback_data="murojaat")]
-    ])
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton(text="👥 Referal", callback_data="referal"),
+        InlineKeyboardButton(text="🏆 Reyting", callback_data="reyting"),
+        InlineKeyboardButton(text="🎲 Random foydalanuvchi", callback_data="random"),
+        InlineKeyboardButton(text="✉️ Adminga murojaat", callback_data="murojaat")
+    )
     await message.answer("Assalomu alaykum! Botga xush kelibsiz!", reply_markup=kb)
 
 # ==============================
-# Callback funksiyalar
+# 7. Obuna tekshirish tugmasi
 # ==============================
-@dp.callback_query(lambda c: c.data == "check_subs")
+@dp.callback_query_handler(lambda c: c.data == "check_subs")
 async def check_subs(call: CallbackQuery):
     not_subs = await check_subscription(call.from_user.id)
     if not_subs:
@@ -132,14 +132,20 @@ async def check_subs(call: CallbackQuery):
     else:
         await call.message.edit_text("✅ Obuna tasdiqlandi! Endi botdan foydalanishingiz mumkin.")
 
-@dp.callback_query(lambda c: c.data == "referal")
+# ==============================
+# 8. Referal
+# ==============================
+@dp.callback_query_handler(lambda c: c.data == "referal")
 async def referal(call: CallbackQuery):
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (call.from_user.id,))
     balance = cursor.fetchone()[0]
     link = f"https://t.me/{(await bot.get_me()).username}?start={call.from_user.id}"
     await call.message.answer(f"👤 Sizning referal linkingiz:\n{link}\n\n💰 Balansingiz: {balance}")
 
-@dp.callback_query(lambda c: c.data == "reyting")
+# ==============================
+# 9. Reyting
+# ==============================
+@dp.callback_query_handler(lambda c: c.data == "reyting")
 async def reyting(call: CallbackQuery):
     cursor.execute("SELECT user_id FROM admins")
     admin_ids = set([row[0] for row in cursor.fetchall()])
@@ -162,7 +168,10 @@ async def reyting(call: CallbackQuery):
 
     await call.message.answer(text_admin + text_users)
 
-@dp.callback_query(lambda c: c.data == "random")
+# ==============================
+# 10. Random foydalanuvchi
+# ==============================
+@dp.callback_query_handler(lambda c: c.data == "random")
 async def random_user(call: CallbackQuery):
     cursor.execute("SELECT user_id FROM users")
     users = cursor.fetchall()
@@ -172,24 +181,111 @@ async def random_user(call: CallbackQuery):
     else:
         await call.message.answer("❌ Foydalanuvchilar yo‘q")
 
-@dp.callback_query(lambda c: c.data == "murojaat")
+# ==============================
+# 11. Adminga murojaat
+# ==============================
+active_murojaat = {}
+
+@dp.callback_query_handler(lambda c: c.data == "murojaat")
 async def murojaat(call: CallbackQuery):
+    active_murojaat[call.from_user.id] = True
     await call.message.answer("✍️ Adminga murojaat qilmoqchi bo‘lsangiz, xabaringizni yozing:")
 
-    @dp.message()
-    async def forward_to_admin(message: Message):
-        if message.from_user.id != call.from_user.id:
-            return
+@dp.message_handler()
+async def forward_to_admin(message: Message):
+    if active_murojaat.get(message.from_user.id):
         for admin in ADMINS:
             await bot.send_message(admin, f"📩 Yangi murojaat:\n\n{message.from_user.id} ({message.from_user.full_name})\n\n{message.text}")
         await message.answer("✅ Murojaatingiz adminga yuborildi.")
+        active_murojaat[message.from_user.id] = False
 
 # ==============================
-# Botni ishga tushirish
+# 12. Admin panel va funksiyalar
 # ==============================
-async def main():
-    print("🤖 Bot ishga tushdi...")
-    await dp.start_polling(bot)
+@dp.message_handler(commands=["admin"])
+async def admin_panel(message: Message):
+    if message.from_user.id not in ADMINS:
+        return
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton(text="📢 Hammaga xabar", callback_data="broadcast"),
+        InlineKeyboardButton(text="➕ Kanal qo‘shish", callback_data="add_channel"),
+        InlineKeyboardButton(text="➖ Kanal o‘chirish", callback_data="del_channel"),
+        InlineKeyboardButton(text="👥 Foydalanuvchilar soni", callback_data="users_count"),
+        InlineKeyboardButton(text="👤 Adminlar boshqaruvi", callback_data="manage_admins"),
+        InlineKeyboardButton(text="🚪 Chiqqanlar ro‘yxati", callback_data="left_users")
+    )
+    await message.answer("⚙️ Admin panel", reply_markup=kb)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# ==============================
+# 13. Broadcast
+# ==============================
+broadcast_users = {}
+
+@dp.callback_query_handler(lambda c: c.data == "broadcast")
+async def broadcast_start(call: CallbackQuery):
+    broadcast_users[call.from_user.id] = True
+    await call.message.answer("📨 Hammaga yuboriladigan xabarni yozing:")
+
+@dp.message_handler()
+async def broadcast_message(message: Message):
+    if broadcast_users.get(message.from_user.id):
+        cursor.execute("SELECT user_id FROM users")
+        users = cursor.fetchall()
+        sent = 0
+        for user in users:
+            try:
+                await bot.send_message(user[0], message.text)
+                sent += 1
+            except:
+                pass
+        await message.answer(f"✅ {sent} ta foydalanuvchiga yuborildi.")
+        broadcast_users[message.from_user.id] = False
+
+# ==============================
+# 14. Kanal qo‘shish/o‘chirish
+# ==============================
+active_add_channel = {}
+active_del_channel = {}
+
+@dp.callback_query_handler(lambda c: c.data == "add_channel")
+async def add_channel_start(call: CallbackQuery):
+    active_add_channel[call.from_user.id] = True
+    await call.message.answer("📌 Qo‘shmoqchi bo‘lgan kanal username (@kanal) ni yuboring:")
+
+@dp.callback_query_handler(lambda c: c.data == "del_channel")
+async def del_channel_start(call: CallbackQuery):
+    active_del_channel[call.from_user.id] = True
+    await call.message.answer("❌ O‘chirish uchun kanal username (@kanal) ni yuboring:")
+
+@dp.message_handler()
+async def add_channel_db(message: Message):
+    if active_add_channel.get(message.from_user.id):
+        cursor.execute("INSERT INTO channels(channel_id) VALUES (?)", (message.text,))
+        conn.commit()
+        await message.answer("✅ Kanal qo‘shildi.")
+        active_add_channel[message.from_user.id] = False
+
+@dp.message_handler()
+async def del_channel_db(message: Message):
+    if active_del_channel.get(message.from_user.id):
+        cursor.execute("DELETE FROM channels WHERE channel_id=?", (message.text,))
+        conn.commit()
+        await message.answer("✅ Kanal o‘chirildi.")
+        active_del_channel[message.from_user.id] = False
+
+# ==============================
+# 15. Foydalanuvchilar soni
+# ==============================
+@dp.callback_query_handler(lambda c: c.data == "users_count")
+async def users_count(call: CallbackQuery):
+    cursor.execute("SELECT COUNT(*) FROM users")
+    count = cursor.fetchone()[0]
+    await call.message.answer(f"👥 Bot foydalanuvchilari soni: {count}")
+
+# ==============================
+# 16. Admin boshqaruvi
+# ==============================
+@dp.callback_query_handler(lambda c: c.data == "manage_admins")
+async def manage_admins(call: CallbackQuery):
+    await call.message.answer("➕Admin qo‘shish uchun: `/addadmin user_id`\n

@@ -3,13 +3,13 @@ import sqlite3
 import random
 from datetime import datetime
 import os
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from aiogram.filters import Command
+from aiogram.filters import Command, Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-TOKEN = os.getenv("8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w")  # Railway yoki GitHub Environment variable orqali token olish
-ADMINS = [5708983199]  # Asosiy adminlar (qo‘lda kiritilgan)
+TOKEN = os.getenv("8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w")  # Environment variable orqali token olish
+ADMINS = [5708983199]  # Asosiy adminlar
 
 bot = Bot(token=TOKEN, parse_mode="HTML")
 dp = Dispatcher()
@@ -71,6 +71,7 @@ def sub_keyboard(channels):
     kb.row(InlineKeyboardButton(text="Tekshirish ✅", callback_data="check_subs"))
     return kb.as_markup()
 
+# /start command
 @dp.message(Command("start"))
 async def start_cmd(message: Message):
     ref_id = None
@@ -95,7 +96,8 @@ async def start_cmd(message: Message):
     ])
     await message.answer("Assalomu alaykum! Botga xush kelibsiz!", reply_markup=kb)
 
-@dp.callback_query(F.data == "check_subs")
+# Callbacklar
+@dp.callback_query(Text("check_subs"))
 async def check_subs(call: CallbackQuery):
     not_subs = await check_subscription(call.from_user.id)
     if not_subs:
@@ -103,16 +105,14 @@ async def check_subs(call: CallbackQuery):
     else:
         await call.message.edit_text("✅ Obuna tasdiqlandi! Endi botdan foydalanishingiz mumkin.")
 
-@dp.callback_query(F.data == "referal")
+@dp.callback_query(Text("referal"))
 async def referal(call: CallbackQuery):
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (call.from_user.id,))
     balance = cursor.fetchone()[0]
     link = f"https://t.me/{(await bot.get_me()).username}?start={call.from_user.id}"
-    await call.message.answer(
-        f"👤 Sizning referal linkingiz:\n{link}\n\n💰 Balansingiz: {balance}"
-    )
+    await call.message.answer(f"👤 Sizning referal linkingiz:\n{link}\n\n💰 Balansingiz: {balance}")
 
-@dp.callback_query(F.data == "reyting")
+@dp.callback_query(Text("reyting"))
 async def reyting(call: CallbackQuery):
     cursor.execute("SELECT user_id FROM admins")
     admin_ids = set([row[0] for row in cursor.fetchall()])
@@ -135,7 +135,7 @@ async def reyting(call: CallbackQuery):
 
     await call.message.answer(text_admin + text_users)
 
-@dp.callback_query(F.data == "random")
+@dp.callback_query(Text("random"))
 async def random_user(call: CallbackQuery):
     cursor.execute("SELECT user_id FROM users")
     users = cursor.fetchall()
@@ -145,17 +145,16 @@ async def random_user(call: CallbackQuery):
     else:
         await call.message.answer("❌ Foydalanuvchilar yo‘q")
 
-@dp.callback_query(F.data == "murojaat")
+@dp.callback_query(Text("murojaat"))
 async def murojaat(call: CallbackQuery):
     await call.message.answer("✍️ Adminga murojaat qilmoqchi bo‘lsangiz, xabaringizni yozing:")
-    dp.message.register(forward_to_admin, F.chat.id == call.from_user.id)
 
-async def forward_to_admin(message: Message):
-    for admin in ADMINS:
-        await bot.send_message(admin, f"📩 Yangi murojaat:\n\n{message.from_user.id} ({message.from_user.full_name})\n\n{message.text}")
-    await message.answer("✅ Murojaatingiz adminga yuborildi.")
-
-# Qolgan admin va funksiyalar kodini xuddi shunday syntax bilan ishlatish mumkin
+    # Keyingi xabar adminlarga yuborish
+    @dp.message()
+    async def forward_to_admin(message: Message):
+        for admin in ADMINS:
+            await bot.send_message(admin, f"📩 Yangi murojaat:\n\n{message.from_user.id} ({message.from_user.full_name})\n\n{message.text}")
+        await message.answer("✅ Murojaatingiz adminga yuborildi.")
 
 async def main():
     print("🤖 Bot ishga tushdi...")

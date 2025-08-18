@@ -109,7 +109,7 @@ async def referal(call: CallbackQuery):
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (call.from_user.id,))
     balance = cursor.fetchone()[0]
     link = f"https://t.me/{(await bot.get_me()).username}?start={call.from_user.id}"
-    await call.message.answer(f"👤 Sizning referal linkingiz:
+    await call.message.answer(f""👤 Sizning referal linkingiz:
 {link}
 
 💰 Balansingiz: {balance}")

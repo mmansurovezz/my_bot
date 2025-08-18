@@ -6,6 +6,7 @@ import os
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.dispatcher.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 # ==============================
 # 1. Token va adminlar
@@ -81,11 +82,11 @@ async def check_subscription(user_id):
 # 5. Obuna uchun klaviatura
 # ==============================
 def sub_keyboard(channels):
-    kb = InlineKeyboardMarkup()
+    kb = InlineKeyboardBuilder()
     for ch in channels:
-        kb.add(InlineKeyboardButton(text="✅ Kanalga obuna bo‘lish", url=f"https://t.me/{ch.replace('@','')}"))
-    kb.add(InlineKeyboardButton(text="Tekshirish ✅", callback_data="check_subs"))
-    return kb
+        kb.row(InlineKeyboardButton(text="✅ Kanalga obuna bo‘lish", url=f"https://t.me/{ch.replace('@','')}"))
+    kb.row(InlineKeyboardButton(text="Tekshirish ✅", callback_data="check_subs"))
+    return kb.as_markup()
 
 # ==============================
 # 6. /start buyrug'i
@@ -260,4 +261,65 @@ async def del_channel_db(message: Message):
 async def users_count(call: CallbackQuery):
     cursor.execute("SELECT COUNT(*) FROM users")
     count = cursor.fetchone()[0]
-    await call.message.answer(f"👥
+    await call.message.answer(f"👥 Bot foydalanuvchilari soni: {count}")
+
+# ==============================
+# 16. Admin boshqaruvi
+# ==============================
+@dp.callback_query_handler(lambda c: c.data == "manage_admins")
+async def manage_admins(call: CallbackQuery):
+    await call.message.answer(
+        "➕ Admin qo‘shish uchun: `/addadmin user_id`\n"
+        "➖ Admin o‘chirish uchun: `/deladmin user_id`"
+    )
+
+@dp.message_handler(Command("addadmin"))
+async def add_admin(message: Message):
+    if message.from_user.id not in ADMINS:
+        return
+    try:
+        new_admin = int(message.text.split()[1])
+        cursor.execute("INSERT OR IGNORE INTO admins(user_id) VALUES (?)", (new_admin,))
+        conn.commit()
+        await message.answer("✅ Admin qo‘shildi.")
+    except:
+        await message.answer("❌ Noto‘g‘ri format. Misol: /addadmin 123456789")
+
+@dp.message_handler(Command("deladmin"))
+async def del_admin(message: Message):
+    if message.from_user.id not in ADMINS:
+        return
+    try:
+        old_admin = int(message.text.split()[1])
+        cursor.execute("DELETE FROM admins WHERE user_id=?", (old_admin,))
+        conn.commit()
+        await message.answer("✅ Admin o‘chirildi.")
+    except:
+        await message.answer("❌ Noto‘g‘ri format. Misol: /deladmin 123456789")
+
+# ==============================
+# 17. Chiqqanlar ro‘yxati
+# ==============================
+@dp.callback_query_handler(lambda c: c.data == "left_users")
+async def show_left_users(call: CallbackQuery):
+    cursor.execute("SELECT user_id, channel_id, left_time FROM unsubscribed ORDER BY left_time DESC LIMIT 10")
+    rows = cursor.fetchall()
+    if not rows:
+        await call.message.answer("✅ Hozircha hech kim chiqmagan.")
+        return
+
+    text = "🚪 <b>Kanaldan chiqqanlar:</b>\n\n"
+    for user_id, channel_id, time in rows:
+        text += f"👤 <a href='tg://user?id={user_id}'>User</a>\n📤 Kanal: {channel_id}\n🕒 Vaqt: {time}\n\n"
+
+    await call.message.answer(text)
+
+# ==============================
+# 18. Botni ishga tushirish
+# ==============================
+async def main():
+    print("🤖 Bot ishga tushdi...")
+    await dp.start_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())

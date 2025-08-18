@@ -3,17 +3,17 @@ import sqlite3
 import random
 from datetime import datetime
 import os
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 
 # ==============================
 # 1. Token va adminlar
 # ==============================
-TOKEN = os.getenv("8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w") or "8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w"
+TOKEN = os.getenv("BOT_TOKEN") or "8461331939:AAFTnBncGUUJA34WUa2NKu-iAAulbymiL1w"
 ADMINS = [5708983199]
 
 bot = Bot(token=TOKEN, parse_mode="HTML")
-dp = Dispatcher()
+dp = Dispatcher(bot)
 
 # ==============================
 # 2. Bazani yaratish va ulash
@@ -89,8 +89,11 @@ def sub_keyboard(channels):
 # ==============================
 # 6. /start buyrug'i
 # ==============================
-@dp.message(lambda m: m.text and m.text.startswith("/start"))
+@dp.message()
 async def start_cmd(message: Message):
+    if not message.text.startswith("/start"):
+        return
+
     ref_id = None
     if len(message.text.split()) > 1:
         try:
@@ -185,18 +188,22 @@ async def random_user(call: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "murojaat")
 async def murojaat(call: CallbackQuery):
     await call.message.answer("✍️ Adminga murojaat qilmoqchi bo‘lsangiz, xabaringizni yozing:")
-    dp.message.register(forward_to_admin, lambda m: m.chat.id == call.from_user.id)
 
-async def forward_to_admin(message: Message):
-    for admin in ADMINS:
-        await bot.send_message(admin, f"📩 Yangi murojaat:\n\n{message.from_user.id} ({message.from_user.full_name})\n\n{message.text}")
-    await message.answer("✅ Murojaatingiz adminga yuborildi.")
+    @dp.message()
+    async def forward_to_admin(message: Message):
+        if message.from_user.id != call.from_user.id:
+            return
+        for admin in ADMINS:
+            await bot.send_message(admin, f"📩 Yangi murojaat:\n\n{message.from_user.id} ({message.from_user.full_name})\n\n{message.text}")
+        await message.answer("✅ Murojaatingiz adminga yuborildi.")
 
 # ==============================
 # 12. Admin panel va funksiyalar
 # ==============================
-@dp.message(lambda m: m.text and m.text.startswith("/admin"))
+@dp.message()
 async def admin_panel(message: Message):
+    if not message.text.startswith("/admin"):
+        return
     if message.from_user.id not in ADMINS:
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -215,19 +222,21 @@ async def admin_panel(message: Message):
 @dp.callback_query(lambda c: c.data == "broadcast")
 async def broadcast_start(call: CallbackQuery):
     await call.message.answer("📨 Hammaga yuboriladigan xabarni yozing:")
-    dp.message.register(broadcast_message)
 
-async def broadcast_message(message: Message):
-    cursor.execute("SELECT user_id FROM users")
-    users = cursor.fetchall()
-    sent = 0
-    for user in users:
-        try:
-            await bot.send_message(user[0], message.text)
-            sent += 1
-        except:
-            pass
-    await message.answer(f"✅ {sent} ta foydalanuvchiga yuborildi.")
+    @dp.message()
+    async def broadcast_message(message: Message):
+        if message.from_user.id not in ADMINS:
+            return
+        cursor.execute("SELECT user_id FROM users")
+        users = cursor.fetchall()
+        sent = 0
+        for user in users:
+            try:
+                await bot.send_message(user[0], message.text)
+                sent += 1
+            except:
+                pass
+        await message.answer(f"✅ {sent} ta foydalanuvchiga yuborildi.")
 
 # ==============================
 # 14. Kanal qo‘shish/o‘chirish
@@ -235,22 +244,22 @@ async def broadcast_message(message: Message):
 @dp.callback_query(lambda c: c.data == "add_channel")
 async def add_channel_start(call: CallbackQuery):
     await call.message.answer("📌 Qo‘shmoqchi bo‘lgan kanal username (@kanal) ni yuboring:")
-    dp.message.register(add_channel_db)
 
-async def add_channel_db(message: Message):
-    cursor.execute("INSERT INTO channels(channel_id) VALUES (?)", (message.text,))
-    conn.commit()
-    await message.answer("✅ Kanal qo‘shildi.")
+    @dp.message()
+    async def add_channel_db(message: Message):
+        cursor.execute("INSERT INTO channels(channel_id) VALUES (?)", (message.text,))
+        conn.commit()
+        await message.answer("✅ Kanal qo‘shildi.")
 
 @dp.callback_query(lambda c: c.data == "del_channel")
 async def del_channel_start(call: CallbackQuery):
     await call.message.answer("❌ O‘chirish uchun kanal username (@kanal) ni yuboring:")
-    dp.message.register(del_channel_db)
 
-async def del_channel_db(message: Message):
-    cursor.execute("DELETE FROM channels WHERE channel_id=?", (message.text,))
-    conn.commit()
-    await message.answer("✅ Kanal o‘chirildi.")
+    @dp.message()
+    async def del_channel_db(message: Message):
+        cursor.execute("DELETE FROM channels WHERE channel_id=?", (message.text,))
+        conn.commit()
+        await message.answer("✅ Kanal o‘chirildi.")
 
 # ==============================
 # 15. Foydalanuvchilar soni
@@ -266,10 +275,12 @@ async def users_count(call: CallbackQuery):
 # ==============================
 @dp.callback_query(lambda c: c.data == "manage_admins")
 async def manage_admins(call: CallbackQuery):
-    await call.message.answer("➕Admin qo‘shish uchun: `/addadmin user_id`\n➖Admin o‘chirish uchun: `/deladmin user_id`")
+    await call.message.answer("➕Admin qo‘shish uchun: /addadmin user_id\n➖Admin o‘chirish uchun: /deladmin user_id")
 
-@dp.message(lambda m: m.text and m.text.startswith("/addadmin"))
+@dp.message()
 async def add_admin(message: Message):
+    if not message.text.startswith("/addadmin"):
+        return
     if message.from_user.id not in ADMINS:
         return
     try:
@@ -280,8 +291,10 @@ async def add_admin(message: Message):
     except:
         await message.answer("❌ Noto‘g‘ri format. Misol: /addadmin 123456789")
 
-@dp.message(lambda m: m.text and m.text.startswith("/deladmin"))
+@dp.message()
 async def del_admin(message: Message):
+    if not message.text.startswith("/deladmin"):
+        return
     if message.from_user.id not in ADMINS:
         return
     try:

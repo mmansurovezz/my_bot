@@ -3,7 +3,7 @@ import sqlite3
 import random
 from datetime import datetime
 import os
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -121,7 +121,7 @@ async def start_cmd(message: Message):
 # ==============================
 # 7. Obuna tekshirish tugmasi
 # ==============================
-@dp.callback_query(F.data == "check_subs")
+@dp.callback_query(lambda c: c.data == "check_subs")
 async def check_subs(call: CallbackQuery):
     not_subs = await check_subscription(call.from_user.id)
     if not_subs:
@@ -135,7 +135,7 @@ async def check_subs(call: CallbackQuery):
 # ==============================
 # 8. Referal
 # ==============================
-@dp.callback_query(F.data == "referal")
+@dp.callback_query(lambda c: c.data == "referal")
 async def referal(call: CallbackQuery):
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (call.from_user.id,))
     balance = cursor.fetchone()[0]
@@ -145,7 +145,7 @@ async def referal(call: CallbackQuery):
 # ==============================
 # 9. Reyting
 # ==============================
-@dp.callback_query(F.data == "reyting")
+@dp.callback_query(lambda c: c.data == "reyting")
 async def reyting(call: CallbackQuery):
     cursor.execute("SELECT user_id FROM admins")
     admin_ids = set([row[0] for row in cursor.fetchall()])
@@ -171,7 +171,7 @@ async def reyting(call: CallbackQuery):
 # ==============================
 # 10. Random foydalanuvchi
 # ==============================
-@dp.callback_query(F.data == "random")
+@dp.callback_query(lambda c: c.data == "random")
 async def random_user(call: CallbackQuery):
     cursor.execute("SELECT user_id FROM users")
     users = cursor.fetchall()
@@ -184,10 +184,10 @@ async def random_user(call: CallbackQuery):
 # ==============================
 # 11. Adminga murojaat
 # ==============================
-@dp.callback_query(F.data == "murojaat")
+@dp.callback_query(lambda c: c.data == "murojaat")
 async def murojaat(call: CallbackQuery):
     await call.message.answer("✍️ Adminga murojaat qilmoqchi bo‘lsangiz, xabaringizni yozing:")
-    dp.message.register(forward_to_admin, F.chat.id == call.from_user.id)
+    dp.message.register(forward_to_admin, lambda m: m.chat.id == call.from_user.id)
 
 async def forward_to_admin(message: Message):
     for admin in ADMINS:
@@ -214,7 +214,7 @@ async def admin_panel(message: Message):
 # ==============================
 # 13. Broadcast
 # ==============================
-@dp.callback_query(F.data == "broadcast")
+@dp.callback_query(lambda c: c.data == "broadcast")
 async def broadcast_start(call: CallbackQuery):
     await call.message.answer("📨 Hammaga yuboriladigan xabarni yozing:")
     dp.message.register(broadcast_message)
@@ -234,7 +234,7 @@ async def broadcast_message(message: Message):
 # ==============================
 # 14. Kanal qo‘shish/o‘chirish
 # ==============================
-@dp.callback_query(F.data == "add_channel")
+@dp.callback_query(lambda c: c.data == "add_channel")
 async def add_channel_start(call: CallbackQuery):
     await call.message.answer("📌 Qo‘shmoqchi bo‘lgan kanal username (@kanal) ni yuboring:")
     dp.message.register(add_channel_db)
@@ -244,7 +244,7 @@ async def add_channel_db(message: Message):
     conn.commit()
     await message.answer("✅ Kanal qo‘shildi.")
 
-@dp.callback_query(F.data == "del_channel")
+@dp.callback_query(lambda c: c.data == "del_channel")
 async def del_channel_start(call: CallbackQuery):
     await call.message.answer("❌ O‘chirish uchun kanal username (@kanal) ni yuboring:")
     dp.message.register(del_channel_db)
@@ -257,7 +257,7 @@ async def del_channel_db(message: Message):
 # ==============================
 # 15. Foydalanuvchilar soni
 # ==============================
-@dp.callback_query(F.data == "users_count")
+@dp.callback_query(lambda c: c.data == "users_count")
 async def users_count(call: CallbackQuery):
     cursor.execute("SELECT COUNT(*) FROM users")
     count = cursor.fetchone()[0]
@@ -266,7 +266,7 @@ async def users_count(call: CallbackQuery):
 # ==============================
 # 16. Admin boshqaruvi
 # ==============================
-@dp.callback_query(F.data == "manage_admins")
+@dp.callback_query(lambda c: c.data == "manage_admins")
 async def manage_admins(call: CallbackQuery):
     await call.message.answer("➕Admin qo‘shish uchun: `/addadmin user_id`\n➖Admin o‘chirish uchun: `/deladmin user_id`")
 
@@ -297,7 +297,7 @@ async def del_admin(message: Message):
 # ==============================
 # 17. Chiqqanlar ro‘yxati
 # ==============================
-@dp.callback_query(F.data == "left_users")
+@dp.callback_query(lambda c: c.data == "left_users")
 async def show_left_users(call: CallbackQuery):
     cursor.execute("SELECT user_id, channel_id, left_time FROM unsubscribed ORDER BY left_time DESC LIMIT 10")
     rows = cursor.fetchall()

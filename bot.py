@@ -1,4 +1,6 @@
+import ast
 import json
+import operator
 import os
 import random
 import re
@@ -697,7 +699,31 @@ async def cmd_choose(msg: types.Message):
 
 
 # ── /calc ─────────────────────────────────────────────────────────────────────
-_SAFE_CALC = re.compile(r"^[\d\s\+\-\*\/\.\(\)\^%]+$")
+_CALC_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+
+def _safe_eval(node):
+    """Recursively evaluate an AST node using only safe arithmetic ops."""
+    if isinstance(node, ast.Expression):
+        return _safe_eval(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.BinOp) and type(node.op) in _CALC_OPS:
+        left = _safe_eval(node.left)
+        right = _safe_eval(node.right)
+        return _CALC_OPS[type(node.op)](left, right)
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _CALC_OPS:
+        return _CALC_OPS[type(node.op)](_safe_eval(node.operand))
+    raise ValueError("Unsupported expression")
 
 
 @dp.message_handler(commands=["calc"])
@@ -705,13 +731,14 @@ async def cmd_calc(msg: types.Message):
     expr = msg.get_args().strip()
     if not expr:
         return await msg.reply("❌ Foydalanish: /calc 2+2*3")
-    if not _SAFE_CALC.match(expr):
-        return await msg.reply("❌ Faqat raqamlar va amallar (+, -, *, /, %, ()) qabul qilinadi.")
     try:
-        result = eval(expr.replace("^", "**"), {"__builtins__": {}}, {})  # noqa: S307
-        await msg.answer(f"🔢 {expr} = <b>{result}</b>")
-    except Exception:
-        await msg.reply("❌ Hisoblashda xato.")
+        tree = ast.parse(expr.replace("^", "**"), mode="eval")
+        result = _safe_eval(tree)
+        # Format: hide trailing zeros for floats
+        formatted = int(result) if isinstance(result, float) and result.is_integer() else result
+        await msg.answer(f"🔢 {expr} = <b>{formatted}</b>")
+    except (ValueError, ZeroDivisionError, SyntaxError, OverflowError):
+        await msg.reply("❌ Noto'g'ri ifoda. Misol: /calc 2+2*3")
 
 
 # ── /quote ────────────────────────────────────────────────────────────────────
